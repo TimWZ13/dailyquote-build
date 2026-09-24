@@ -1,0 +1,33 @@
+name: Cloud Build Mac DMG
+on: push
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Show working directory & files (debug)
+        run: |
+          pwd
+          ls -la
+
+      - name: Build Swift Release (arm64 + x86_64 universal)
+        run: |
+          swift build --configuration release --arch arm64 --arch x86_64
+
+      - name: Locate built .app
+        run: |
+          ls -la .build/apple/Products/Release/
+
+      - name: Create DMG
+        run: |
+          APP_PATH=".build/apple/Products/Release/Trigin6Quote.app"
+          DMG_NAME="Trigin6Quote.dmg"
+          hdiutil create -volname "Trigin6Quote" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_NAME"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trigin6Quote-DMG
+          path: ./Trigin6Quote.dmg
