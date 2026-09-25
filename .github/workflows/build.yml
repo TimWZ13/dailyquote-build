@@ -1,0 +1,85 @@
+name: Cloud Build Mac DMG
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: 编译双架构Release
+        run: swift build --configuration release --arch arm64 --arch x86_64
+
+      - name: 组装Mac App
+        run: |
+          rm -rf Trigin6Quote.app dmg_root icon.iconset
+          mkdir -p Trigin6Quote.app/Contents/MacOS
+          mkdir -p Trigin6Quote.app/Contents/Resources
+          mkdir icon.iconset
+
+          # 拷贝主程序
+          cp .build/apple/Products/Release/Trigin6Quote Trigin6Quote.app/Contents/MacOS/
+          # 拷贝完整资源包
+          cp -R .build/apple/Products/Release/Trigin6Quote_Trigin6Quote.bundle Trigin6Quote.app/Contents/Resources/
+
+          # 用你自己上传的原图做图标，生成mac标准icns（不换图，只是系统识别需要）
+          cp Trigin6Quote/Resources/Images/AppIcon_512.png icon.iconset/icon_512x512.png
+          sips -z 16 16     icon.iconset/icon_512x512.png --out icon.iconset/icon_16x16.png > /dev/null
+          sips -z 32 32     icon.iconset/icon_512x512.png --out icon.iconset/icon_16x16@2x.png > /dev/null
+          sips -z 32 32     icon.iconset/icon_512x512.png --out icon.iconset/icon_32x32.png > /dev/null
+          sips -z 64 64     icon.iconset/icon_512x512.png --out icon.iconset/icon_32x32@2x.png > /dev/null
+          sips -z 128 128   icon.iconset/icon_512x512.png --out icon.iconset/icon_128x128.png > /dev/null
+          sips -z 256 256   icon.iconset/icon_512x512.png --out icon.iconset/icon_128x128@2x.png > /dev/null
+          sips -z 256 256   icon.iconset/icon_512x512.png --out icon.iconset/icon_256x256.png > /dev/null
+          sips -z 512 512   icon.iconset/icon_512x512.png --out icon.iconset/icon_256x256@2x.png > /dev/null
+          iconutil -c icns icon.iconset
+          cp icon.icns Trigin6Quote.app/Contents/Resources/
+
+          # 写Info.plist
+          echo '<?xml version="1.0" encoding="UTF-8"?>' > Trigin6Quote.app/Contents/Info.plist
+          echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<plist version="1.0">' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<dict>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>CFBundleDevelopmentRegion</key><string>zh_CN</string>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>CFBundleDisplayName</key><string>Trigin6Quote</string>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>CFBundleExecutable</key><string>Trigin6Quote</string>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>CFBundleIdentifier</key><string>com.dailyquote.app</string>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>CFBundleName</key><string>Trigin6Quote</string>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>CFBundlePackageType</key><string>APPL</string>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>CFBundleShortVersionString</key><string>1.0.0</string>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>CFBundleVersion</key><string>1</string>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>CFBundleIconFile</key><string>icon.icns</string>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>NSHighResolutionCapable</key><true/>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '<key>LSMinimumSystemVersion</key><string>13.0</string>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '</dict>' >> Trigin6Quote.app/Contents/Info.plist
+          echo '</plist>' >> Trigin6Quote.app/Contents/Info.plist
+
+      - name: 制作标准拖拽安装DMG（手动挂载，杜绝空dmg）
+        run: |
+          rm -f Trigin6Quote.dmg
+          # 创建100M大小的临时可读写dmg
+          hdiutil create -volname Trigin6Quote -fs HFS+ -size 100m Trigin6Quote_tmp.dmg
+          # 挂载临时dmg到临时目录
+          hdiutil attach Trigin6Quote_tmp.dmg -mountpoint /tmp/dmg_mount
+          # 把App和Applications快捷方式放进挂载的dmg里
+          cp -R Trigin6Quote.app /tmp/dmg_mount/
+          ln -s /Applications /tmp/dmg_mount/Applications
+          # 卸载dmg
+          hdiutil detach /tmp/dmg_mount
+          # 把临时dmg压缩成最终的只读安装dmg
+          hdiutil convert Trigin6Quote_tmp.dmg -format UDZO -o Trigin6Quote.dmg
+          rm -f Trigin6Quote_tmp.dmg
+          # 验证dmg里的内容
+          hdiutil verify Trigin6Quote.dmg
+          ls -la Trigin6Quote.dmg
+
+      - name: 上传DMG成品
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trigin6Quote_Mac安装包
+          path: Trigin6Quote.dmg
