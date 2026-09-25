@@ -1,0 +1,52 @@
+name: Cloud Build Mac DMG
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: 环境确认
+        run: |
+          ls -la
+          xcodebuild -version
+
+      - name: 编译双架构通用版
+        run: swift build --configuration release --arch arm64 --arch x86_64
+
+      - name: 查看编译产物
+        run: ls -la .build/apple/Products/Release/
+
+      - name: 组装Mac App安装包
+        run: |
+          # 清理旧文件
+          rm -rf Trigin6Quote.app dmg_root
+
+          # 创建标准Mac App目录结构
+          mkdir -p Trigin6Quote.app/Contents/MacOS
+          mkdir -p Trigin6Quote.app/Contents/Resources
+
+          # 直接拷贝编译好的通用二进制（路径固定，不用find）
+          cp .build/apple/Products/Release/Trigin6Quote Trigin6Quote.app/Contents/MacOS/
+
+          # 写入Info.plist
+          echo "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHBsaXN0IHZlcnNpb249IjEuMCI+CjxkaWN0PgogICAgPGtleT5DRkJ1bmRsZUV4ZWN1dGFibGU8L2tleT4KICAgIDxzdHJpbmc+VHJpZ2luNlF1b3RlPC9zdHJpbmc+CiAgICA8a2V5PkNGQnVuZGxlSWRlbnRpZmllcjwva2V5PgogICAgPHN0cmluZz5jb20uZGFpbHlxdW90ZS5hcHA8L3N0cmluZz4KICAgIDxrZXk+Q0ZCdW5kbGVOYW1lPC9rZXk+CiAgICA8c3RyaW5nPlRyaWdpbjZRdW90ZTwvc3RyaW5nPgogICAgPGtleT5DRkJ1bmRsZVBhY2thZ2VUeXBlPC9rZXk+CiAgICA8c3RyaW5nPkFQUEw8L3N0cmluZz4KICAgIDxrZXk+TFNNaW5pbXVtU3lzdGVtVmVyc2lvbjwva2V5PgogICAgPHN0cmluZz4xMy4wPC9zdHJpbmc+CiAgICA8a2V5Pk5TSGlnaFJlc29sdXRpb25DYXBhYmxlPC9rZXk+CiAgICA8dHJ1ZS8+CjwvZGljdD4KPC9wbGlzdD4=" | base64 -d > Trigin6Quote.app/Contents/Info.plist
+
+          # 拷贝资源bundle（图标、资源文件）
+          cp -R .build/apple/Products/Release/Trigin6Quote_Trigin6Quote.bundle Trigin6Quote.app/Contents/Resources/
+
+      - name: 生成可安装DMG镜像
+        run: |
+          mkdir dmg_root
+          cp -R Trigin6Quote.app dmg_root/
+          ln -s /Applications dmg_root/Applications
+          hdiutil create -volname Trigin6Quote -srcfolder dmg_root -ov -format UDZO Trigin6Quote.dmg
+
+      - name: 上传DMG成品
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trigin6Quote_Mac安装包
+          path: Trigin6Quote.dmg
